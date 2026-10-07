@@ -315,7 +315,7 @@ function doGet() {
 const API = {
   login: login, sair: sair, trocarSenha: trocarSenha, inicio: inicio, analisar: analisar,
   salvar: salvar, contagem: contagem, listarFotos: listarFotos, verFoto: verFoto,
-  listarUsuarios: listarUsuarios, salvarUsuario: salvarUsuario,
+  listarUsuarios: listarUsuarios, salvarUsuario: salvarUsuario, apagarFoto: apagarFoto,
 };
 
 /**
@@ -545,6 +545,24 @@ function verFoto(token, codigo) {
 // Administração (perfil Admin)
 // ===========================================================================
 
+/** Apaga a foto de vez: arquivo e miniatura no Drive (sem lixeira) e a linha da planilha. */
+function apagarFoto(token, codigo) {
+  const eu = admin_(token);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss = planilha_();
+    const r = linhaPorCodigo_(ss, codigo);
+    if (!r) throw new Error('Foto não encontrada. Talvez já tenha sido apagada.');
+    [r.arquivoId, r.miniaturaId].filter(Boolean).forEach(apagarArquivo_);
+    ss.getSheetByName(APP.abaFotos).deleteRow(r.linha);
+    console.log('Foto ' + codigo + ' apagada por ' + eu.usuario);
+    return { ok: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function listarUsuarios(token) {
   admin_(token);
   const sh = planilha_().getSheetByName(APP.abaUsuarios);
@@ -707,7 +725,17 @@ function linhaPorCodigo_(ss, codigo) {
     .createTextFinder(codigo).matchEntireCell(true).findNext();
   if (!achou) return null;
   const r = sh.getRange(achou.getRow(), 1, 1, CABECALHO.length).getDisplayValues()[0];
-  return { loja: r[COL['Loja']], url: r[COL['Foto (link)']], arquivoId: r[COL['ID do arquivo']] };
+  return { linha: achou.getRow(), loja: r[COL['Loja']], url: r[COL['Foto (link)']], arquivoId: r[COL['ID do arquivo']],
+    miniaturaId: r[COL['ID da miniatura']] };
+}
+
+// Apaga o arquivo do Drive sem passar pela lixeira; se não der, manda para a lixeira.
+function apagarArquivo_(id) {
+  const r = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(id), {
+    method: 'delete', headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true,
+  });
+  const c = r.getResponseCode();
+  if (c >= 300 && c !== 404) { try { DriveApp.getFileById(id).setTrashed(true); } catch (e) {} }
 }
 
 function contagemLojaDia_(ss, loja, data) {

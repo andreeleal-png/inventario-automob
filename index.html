@@ -6,12 +6,12 @@
 <meta name="theme-color" content="#103047">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Inventário">
+<meta name="apple-mobile-web-app-title" content="Automob Inventário">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<title>Inventário Automob</title>
+<title>Automob Inventário</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&display=swap">
@@ -192,6 +192,8 @@ body.com-nav .acoes { bottom: 0; }
 .visor .visor-botoes { display: flex; gap: 8px; }
 .visor .topo #btnBaixarFoto { background: var(--amber, #f2b630); color: #1c1400; }
 .visor .topo button:disabled { opacity: .5; }
+.visor .topo #btnApagarFoto { background: rgba(220,60,60,.22); color: #ffb4b4; }
+.item[role=button] { cursor: pointer; }
 .visor .area { display: grid; place-items: center; min-height: 0; }
 .visor .area img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
 .visor .rodape { font-size: 13px; opacity: .85; }
@@ -211,6 +213,37 @@ body.com-nav .acoes { bottom: 0; }
 .quem { font-size: 14px; color: var(--muted); }
 .quem b { display: block; font-size: 18px; color: var(--fg); }
 
+
+/* ---------- computador (perfil Admin, tela larga) ---------- */
+@media (min-width: 1000px) {
+  body.admin .top { padding: 12px 28px; }
+  body.admin .top img { height: 40px; }
+  body.admin .loja-btn { max-width: 420px; }
+  body.admin .nav { top: 0; bottom: 0; right: auto; width: 220px; flex-direction: column; gap: 6px; padding: 100px 12px 20px; z-index: 4;
+    border-top: 0; border-right: 1px solid var(--line); }
+  body.admin .nav button { flex: none; display: flex; align-items: center; gap: 12px; padding: 12px 14px; font-size: 15px; justify-items: start; }
+  body.admin main { margin-left: 220px; max-width: 1400px; padding: 28px 32px 48px; margin-right: auto; }
+  body.admin.com-nav main { padding-bottom: 48px; }
+  body.admin #abaFotografar, body.admin #telaRevisao { max-width: 720px; margin-left: calc(220px + 32px); }
+  body.admin .filtros { grid-template-columns: minmax(260px, 2fr) 1fr 1fr auto; align-items: end; }
+  body.admin .filtros .campo:first-child.largo { grid-column: auto; }
+  body.admin .filtros .btn { grid-column: auto; padding: 13px 22px; }
+  body.admin .grade { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; }
+  body.admin .foto-card { cursor: pointer; transition: transform .12s, box-shadow .12s; }
+  body.admin .foto-card:hover { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(0,0,0,.18); }
+  body.admin .links { justify-content: flex-start; }
+  body.admin #abaUsuarios { grid-template-columns: 2fr 1fr; align-items: start; }
+  body.admin .usuarios { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+  body.admin .sheet { align-items: center; }
+  body.admin .sheet form { border-radius: 18px; max-width: 560px; max-height: 90vh; overflow-y: auto; }
+  body.admin .visor { grid-template-columns: 1fr 340px; grid-template-rows: auto 1fr; padding: 18px 24px; gap: 16px 24px; }
+  body.admin .visor .topo { grid-column: 1 / -1; }
+  body.admin .visor .area { grid-column: 1; grid-row: 2; }
+  body.admin .visor { background: rgba(3,10,16,.97); }
+  body.admin .visor .area img { max-height: calc(100vh - 110px); }
+  body.admin .visor .rodape { grid-column: 2; grid-row: 2; align-self: start; font-size: 15px; display: grid; gap: 10px; }
+  body.admin .toast { left: auto; right: 24px; max-width: 420px; }
+}
 </style>
 </head>
 <body>
@@ -392,7 +425,7 @@ window.addEventListener('error', function (e) {
 
 <!-- Visualizar foto -->
 <div class="visor" id="visor" hidden>
-  <div class="topo"><b id="visorPlaca"></b><span class="visor-botoes"><button type="button" id="btnBaixarFoto" disabled>Baixar</button><button type="button" id="btnFecharVisor">Fechar</button></span></div>
+  <div class="topo"><b id="visorPlaca"></b><span class="visor-botoes"><button type="button" id="btnApagarFoto" hidden>Apagar</button><button type="button" id="btnBaixarFoto" disabled>Baixar</button><button type="button" id="btnFecharVisor">Fechar</button></span></div>
   <div class="area"><img id="visorImg" alt="Foto do inventário"></div>
   <div class="rodape" id="visorInfo"></div>
 </div>
@@ -911,6 +944,13 @@ async function listar() {
     else if (r.duplicada) { pill.className = 'pill bad'; pill.textContent = 'Placa repetida'; }
     else { pill.className = 'pill ok'; pill.textContent = 'Na planilha'; }
     el.append(img, meio, pill);
+    el.tabIndex = 0; el.setAttribute('role', 'button');
+    el.onclick = () => abrirFoto({
+      codigo: r.id, placa: info.placa || 'SEM PLACA', data: info.data || '', hora: info.hora || '', loja: info.loja || '',
+      responsavel: st.usuario ? st.usuario.nome : '', endereco: r.dados ? r.dados.endereco : '',
+      miniatura: String(r.thumb || '').split(',')[1] || '', local: r.dados ? r.dados.foto : null,
+    });
+    el.onkeydown = e => { if (e.key === 'Enter') el.click(); };
     lista.appendChild(el);
   });
 }
@@ -990,12 +1030,14 @@ async function entrar(usuario) {
   $('formBusca').reset(); st.buscou = false; st.lojas = [];
   $('lista').innerHTML = '<div class="vazio">As fotos que você tirar aparecem aqui, com a placa e se já foram enviadas para a planilha.</div>';
   $('navUsuarios').hidden = !admin;
+  document.body.classList.toggle('admin', admin);
   $('btnLoja').classList.toggle('fixa', !podeTrocarLoja());
   $('quem').innerHTML = '';
   const b = document.createElement('b'); b.textContent = usuario.nome;
   $('quem').append(b, document.createTextNode(usuario.usuario + ' · perfil ' + usuario.perfil + (admin ? '' : ' · ' + lojasDoUsuario().join(', '))));
   definirLoja(lojaInicial());
-  irPara('abaFotografar');
+  // no computador o admin começa pela consulta de fotos
+  irPara(admin && matchMedia('(min-width: 1000px)').matches ? 'abaFotos' : 'abaFotografar');
   listar().then(enviarPendentes);
   try {
     const i = await api('inicio');
@@ -1128,6 +1170,7 @@ async function buscarFotos(pagina) {
       const h2 = document.createElement('div'); h2.className = 'h'; h2.textContent = podeTrocarLoja() ? it.loja : it.responsavel;
       info.append(p, h1, h2);
       b.append(img, info);
+      it.cartao = b;
       b.onclick = () => abrirFoto(it);
       $('grade').appendChild(b);
     });
@@ -1147,7 +1190,13 @@ async function abrirFoto(it) {
   [it.data + ' às ' + it.hora + ' · ' + it.loja, 'Responsável: ' + it.responsavel, it.endereco, 'Código de Foto: ' + it.codigo + (it.manual ? ' · placa digitada à mão' : '')]
     .filter(Boolean).forEach(t => { const s = document.createElement('span'); s.textContent = t; $('visorInfo').appendChild(s); });
   $('visor').hidden = false;
-  st.visor = null; $('btnBaixarFoto').disabled = true;
+  st.visor = null; st.visorItem = it; $('btnBaixarFoto').disabled = true;
+  $('btnApagarFoto').hidden = !(st.usuario && st.usuario.perfil === 'Admin') || !!it.local;
+  if (it.local) { // ainda não foi para a planilha: mostra a foto guardada no celular
+    $('visorImg').src = 'data:image/jpeg;base64,' + it.local;
+    st.visor = { imagem: it.local, nome: nomeArquivo(it) }; $('btnBaixarFoto').disabled = false;
+    return;
+  }
   try {
     const r = await api('verFoto', it.codigo);
     if (!$('visor').hidden) {
@@ -1156,7 +1205,24 @@ async function abrirFoto(it) {
     }
   } catch (e) { if (!sessaoExpirada(e)) toast('Não consegui abrir a foto em tamanho cheio.', 'warn'); }
 }
-$('btnFecharVisor').onclick = () => { $('visor').hidden = true; $('visorImg').src = ''; st.visor = null; };
+$('btnFecharVisor').onclick = () => { $('visor').hidden = true; $('visorImg').src = ''; st.visor = null; st.visorItem = null; };
+
+// Admin: apaga a foto de vez (Drive e planilha)
+$('btnApagarFoto').onclick = async () => {
+  const it = st.visorItem; if (!it) return;
+  const nome = it.placa === 'SEM PLACA' || !it.placa ? 'esta foto' : 'a foto da placa ' + formatarPlaca(it.placa);
+  if (!confirm('Apagar ' + nome + ' de vez?\n\nEla sai da planilha e do Google Drive e não tem como recuperar.')) return;
+  $('btnApagarFoto').disabled = true;
+  try {
+    await api('apagarFoto', it.codigo);
+    if (it.cartao) it.cartao.remove();
+    try { await bd.apagar(it.codigo); listar(); } catch (e) {}
+    $('btnFecharVisor').click();
+    toast('Foto apagada.');
+    atualizarContagem();
+  } catch (e) { if (!sessaoExpirada(e)) toast('Não consegui apagar: ' + msg(e), 'warn'); }
+  $('btnApagarFoto').disabled = false;
+};
 
 function nomeArquivo(it) {
   const limpo = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
