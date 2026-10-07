@@ -1,6 +1,6 @@
 // Guarda o app no celular para abrir rápido e funcionar sem sinal. A planilha continua no Google.
-const CACHE = 'inventario-automob-v9';
-const ARQUIVOS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './splash-512.png', './icon-maskable-512.png', './apple-touch-icon.png', './favicon.png'];
+const CACHE = 'inventario-automob-v10';
+const ARQUIVOS = ['./', './index.html', './instalar.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './splash-512.png', './icon-maskable-512.png', './apple-touch-icon.png', './favicon.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ARQUIVOS)).then(() => self.skipWaiting()));
 });

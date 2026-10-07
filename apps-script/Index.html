@@ -263,6 +263,7 @@ window.addEventListener('error', function (e) {
     <div class="erro" id="loginErro"></div>
     <button class="btn primary" type="submit" id="btnEntrar">Entrar</button>
   </form>
+  <button class="btn" type="button" id="btnInstalarApp" hidden>Instalar o app no celular</button>
 </section>
 
 <!-- Troca de senha -->
@@ -1364,6 +1365,16 @@ setInterval(() => { if (navigator.onLine !== false) enviarPendentes(); }, 60000)
       pedirLogin('Sem conexão para entrar. Tente de novo quando tiver internet.');
     });
 })();
+
+// Botão de instalar na tela de login, quando o navegador oferece a instalação
+let pedidoInstalar = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); pedidoInstalar = e; $('btnInstalarApp').hidden = false; });
+window.addEventListener('appinstalled', () => { $('btnInstalarApp').hidden = true; toast('App instalado. Abra pelo ícone Automob Inventário.'); });
+$('btnInstalarApp').onclick = () => {
+  if (!pedidoInstalar) return;
+  pedidoInstalar.prompt();
+  pedidoInstalar.userChoice.then(() => { pedidoInstalar = null; $('btnInstalarApp').hidden = true; });
+};
 </script>
 </body>
 </html>
