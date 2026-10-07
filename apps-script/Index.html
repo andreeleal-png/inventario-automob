@@ -405,9 +405,28 @@ function toast(msg, tipo) {
   clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, tipo === 'warn' ? 6000 : 3500);
 }
 
+// Endereço do app no Google, usado quando o app roda fora do Google (instalado pelo ícone).
+const API_URL = 'https://script.google.com/macros/s/AKfycby0untZeq4ouURFWcO3uhZrH1LkmxOVjHeiyPqRk-wMJVd1LpCuQK8kstkCxV8baKof3g/exec';
+const DENTRO_DO_GOOGLE = typeof google !== 'undefined' && google.script && google.script.run;
+
 function servidor(fn, ...args) {
+  if (!DENTRO_DO_GOOGLE) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 90000);
+    return fetch(API_URL, {
+      method: 'POST', redirect: 'follow', signal: ctrl.signal,
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // evita a checagem prévia de CORS
+      body: JSON.stringify({ fn, args }),
+    }).then(r => r.json()).then(r => {
+      clearTimeout(timer);
+      if (r.erro !== undefined) throw new Error(r.erro);
+      return r.ok;
+    }, e => {
+      clearTimeout(timer);
+      throw new Error(e && e.name === 'AbortError' ? 'tempo esgotado' : 'sem servidor');
+    });
+  }
   return new Promise((ok, falha) => {
-    if (typeof google === 'undefined' || !google.script || !google.script.run) return falha(new Error('sem servidor'));
     const timer = setTimeout(() => falha(new Error('tempo esgotado')), 90000);
     google.script.run
       .withSuccessHandler(r => { clearTimeout(timer); ok(r); })

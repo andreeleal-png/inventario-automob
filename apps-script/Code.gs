@@ -295,9 +295,32 @@ function doGet() {
     .setTitle(APP.nome)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
     .addMetaTag('mobile-web-app-capable', 'yes')
-    .addMetaTag('apple-mobile-web-app-capable', 'yes')
-    // permite abrir o app dentro da página instalável (ícone da Automob no celular)
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    .addMetaTag('apple-mobile-web-app-capable', 'yes');
+}
+
+/** Funções que o app instalado (página do GitHub) pode chamar pela internet. */
+const API = {
+  login: login, sair: sair, trocarSenha: trocarSenha, inicio: inicio, analisar: analisar,
+  salvar: salvar, contagem: contagem, listarFotos: listarFotos, verFoto: verFoto,
+  listarUsuarios: listarUsuarios, salvarUsuario: salvarUsuario,
+};
+
+/**
+ * Porta de entrada do app instalado: recebe {fn, args} em JSON e devolve
+ * {ok: resultado} ou {erro: mensagem}. As regras de acesso são as mesmas,
+ * porque cada função confere o login.
+ */
+function doPost(e) {
+  let saida;
+  try {
+    const pedido = JSON.parse(e.postData.contents);
+    const fn = API[pedido.fn];
+    if (!fn) throw new Error('Função desconhecida.');
+    saida = { ok: fn.apply(null, pedido.args || []) };
+  } catch (err) {
+    saida = { erro: String((err && err.message) || err) };
+  }
+  return ContentService.createTextOutput(JSON.stringify(saida)).setMimeType(ContentService.MimeType.JSON);
 }
 
 // ===========================================================================
