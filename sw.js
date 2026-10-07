@@ -1,5 +1,5 @@
 // Mantém a casca do app no celular para abrir rápido. O app em si vem do Google.
-const CACHE = 'inventario-automob-v1';
+const CACHE = 'inventario-automob-v2';
 const ARQUIVOS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './favicon.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ARQUIVOS)).then(() => self.skipWaiting()));

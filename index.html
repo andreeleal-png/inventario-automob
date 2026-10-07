@@ -12,38 +12,68 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<style>
-  html, body { margin: 0; height: 100%; background: #103047; }
-  body { padding-top: env(safe-area-inset-top, 0px); box-sizing: border-box; font: 16px/1.4 system-ui, sans-serif; color: #fff; }
-  #app { display: block; width: 100%; height: 100%; border: 0; background: #103047; }
-  #espera { position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 16px; text-align: center; padding: 24px; }
-  #espera img { width: 96px; height: 96px; border-radius: 22px; }
-  #espera a { color: #f2b630; font-weight: 600; }
-  #espera[hidden] { display: none; }
-</style>
-</head>
-<body>
-<div id="espera">
-  <img src="icon-192.png" alt="">
-  <div id="msg">Abrindo o inventário…</div>
-  <a id="direto" hidden href="#" rel="noopener">Abrir direto no navegador</a>
-</div>
-<iframe id="app" title="Inventário Automob" allow="geolocation; camera; clipboard-write" referrerpolicy="no-referrer-when-downgrade"></iframe>
 <script>
   // Endereço do app publicado no Google Apps Script (o mesmo link /exec de sempre).
   var APP = 'https://script.google.com/macros/s/AKfycby0untZeq4ouURFWcO3uhZrH1LkmxOVjHeiyPqRk-wMJVd1LpCuQK8kstkCxV8baKof3g/exec';
-  var frame = document.getElementById('app');
-  var espera = document.getElementById('espera');
-  document.getElementById('direto').href = APP;
-  frame.addEventListener('load', function () { espera.hidden = true; });
-  frame.src = APP;
-  setTimeout(function () {
-    if (!espera.hidden) {
-      document.getElementById('msg').textContent = 'Está demorando para abrir. Confira a internet.';
-      document.getElementById('direto').hidden = false;
-    }
-  }, 15000);
-  if (!navigator.onLine) document.getElementById('msg').textContent = 'Sem internet. Conecte-se para abrir o inventário.';
+  // Aberto pelo ícone instalado: vai direto para o app.
+  var instalado = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  if (instalado) location.replace(APP);
+</script>
+<style>
+  :root { --navy: #103047; --amber: #f2b630; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--navy); color: #fff; }
+  body { font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; padding: calc(env(safe-area-inset-top, 0px) + 32px) 20px calc(env(safe-area-inset-bottom, 0px) + 32px); }
+  main { max-width: 420px; margin: 0 auto; display: grid; gap: 22px; justify-items: center; text-align: center; }
+  .icone { width: 112px; height: 112px; border-radius: 26px; box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+  h1 { margin: 0; font-size: 26px; line-height: 1.15; }
+  p { margin: 0; opacity: .85; }
+  .btn { display: block; width: 100%; padding: 15px; border-radius: 12px; border: 0; font: 700 17px/1 inherit; font-family: inherit; text-decoration: none; text-align: center; cursor: pointer; }
+  .primario { background: var(--amber); color: #1c1400; }
+  .secundario { background: rgba(255,255,255,.12); color: #fff; }
+  .passos { text-align: left; background: rgba(255,255,255,.08); border-radius: 12px; padding: 14px 16px; width: 100%; font-size: 15px; }
+  .passos b { color: var(--amber); }
+  .passos ol { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 4px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <img class="icone" src="icon-192.png" alt="">
+  <h1>Inventário Automob</h1>
+  <p>Instale o app no celular para abrir o inventário direto pelo ícone da Automob.</p>
+
+  <button class="btn primario" id="instalar" type="button" hidden>Instalar o app</button>
+
+  <div class="passos" id="android" hidden>
+    <b>Para instalar no Android</b>
+    <ol><li>Toque no menu ⋮ do Chrome.</li><li>Toque em <b>Instalar app</b> ou <b>Adicionar à tela inicial</b>.</li></ol>
+  </div>
+  <div class="passos" id="iphone" hidden>
+    <b>Para instalar no iPhone</b>
+    <ol><li>Abra este link no Safari.</li><li>Toque no botão de compartilhar.</li><li>Toque em <b>Adicionar à Tela de Início</b>.</li></ol>
+  </div>
+
+  <a class="btn secundario" id="abrir" href="#">Abrir o inventário sem instalar</a>
+</main>
+<script>
+  document.getElementById('abrir').href = APP;
+  var ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  document.getElementById(ios ? 'iphone' : 'android').hidden = false;
+  var pedido = null;
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault(); pedido = e;
+    document.getElementById('instalar').hidden = false;
+    document.getElementById('android').hidden = true;
+  });
+  document.getElementById('instalar').addEventListener('click', function () {
+    if (!pedido) return;
+    pedido.prompt();
+    pedido.userChoice.then(function () { pedido = null; document.getElementById('instalar').hidden = true; });
+  });
+  window.addEventListener('appinstalled', function () {
+    document.querySelector('main p').textContent = 'App instalado. Abra pelo ícone da Automob na tela inicial.';
+  });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
 </script>
 </body>
