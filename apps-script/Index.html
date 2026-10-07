@@ -154,6 +154,10 @@ h2 { font: 700 20px/1.2 var(--display); letter-spacing: .02em; text-transform: u
 .lojas-lista label { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-weight: 500; }
 .lojas-lista input { width: 20px; height: 20px; flex: none; }
 .lojas-contagem { font-size: 13px; opacity: .8; margin-top: 6px; }
+.senha-caixa { position: relative; }
+.senha-caixa input { padding-right: 52px !important; }
+.olho { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); background: transparent; border: 0; padding: 10px; color: var(--muted); display: grid; place-items: center; cursor: pointer; border-radius: 8px; }
+.olho svg { width: 22px; height: 22px; }
 .linha-check { display: flex; align-items: center; gap: 10px; font-weight: 600; }
 .linha-check input { width: 22px; height: 22px; }
 
@@ -1375,6 +1379,23 @@ $('btnInstalarApp').onclick = () => {
   pedidoInstalar.prompt();
   pedidoInstalar.userChoice.then(() => { pedidoInstalar = null; $('btnInstalarApp').hidden = true; });
 };
+
+// Olhinho para mostrar ou esconder a senha digitada
+const OLHO_ABERTO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const OLHO_FECHADO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+document.querySelectorAll('input[type=password]').forEach(campo => {
+  const caixa = document.createElement('div'); caixa.className = 'senha-caixa';
+  campo.parentNode.insertBefore(caixa, campo); caixa.appendChild(campo);
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'olho';
+  const atualizar = () => {
+    const visivel = campo.type === 'text';
+    b.innerHTML = visivel ? OLHO_FECHADO : OLHO_ABERTO;
+    b.setAttribute('aria-label', visivel ? 'Esconder senha' : 'Mostrar senha');
+  };
+  b.onclick = () => { campo.type = campo.type === 'password' ? 'text' : 'password'; atualizar(); campo.focus(); };
+  campo.form && campo.form.addEventListener('submit', () => { campo.type = 'password'; atualizar(); });
+  atualizar(); caixa.appendChild(b);
+});
 </script>
 </body>
 </html>
