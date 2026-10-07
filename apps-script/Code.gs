@@ -707,11 +707,17 @@ function miniatura_(miniId, arquivoId) {
 
 /** OCR do Google Drive: converte a imagem num Google Doc temporário e lê o texto. */
 function ocr_(b64) {
+  let erroRest;
   try {
     return ocrRest_(b64);
   } catch (e) {
-    if (typeof Drive === 'undefined') throw e;
+    erroRest = String(e.message || e);
+  }
+  if (typeof Drive === 'undefined') throw new Error(erroRest);
+  try {
     return ocrServico_(b64); // serviço avançado "Drive API", se estiver ligado
+  } catch (e) {
+    throw new Error(erroRest + ' | ' + String(e.message || e));
   }
 }
 
@@ -743,8 +749,8 @@ function ocrServico_(b64) {
   const blob = Utilities.newBlob(Utilities.base64Decode(b64), 'image/jpeg', 'placa.jpg');
   let id;
   if (Drive.Files.insert) { // Drive API v2
-    id = Drive.Files.insert({ title: 'ocr-placa', mimeType: MimeType.GOOGLE_DOCS }, blob,
-      { ocr: true, ocrLanguage: 'pt' }).id;
+    // na v2 o OCR já cria um Google Docs; informar o tipo de destino faz a API recusar
+    id = Drive.Files.insert({ title: 'ocr-placa' }, blob, { ocr: true, ocrLanguage: 'pt' }).id;
   } else { // Drive API v3
     id = Drive.Files.create({ name: 'ocr-placa', mimeType: MimeType.GOOGLE_DOCS }, blob,
       { ocrLanguage: 'pt', fields: 'id' }).id;
