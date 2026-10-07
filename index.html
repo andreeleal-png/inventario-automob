@@ -183,6 +183,9 @@ body.com-nav .acoes { bottom: 0; }
 .visor .topo { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .visor .topo b { font: 700 24px/1 var(--display); letter-spacing: .05em; }
 .visor .topo button { background: rgba(255,255,255,.12); border: 0; color: #fff; border-radius: 10px; padding: 8px 14px; font-weight: 700; }
+.visor .visor-botoes { display: flex; gap: 8px; }
+.visor .topo #btnBaixarFoto { background: var(--amber, #f2b630); color: #1c1400; }
+.visor .topo button:disabled { opacity: .5; }
 .visor .area { display: grid; place-items: center; min-height: 0; }
 .visor .area img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
 .visor .rodape { font-size: 13px; opacity: .85; }
@@ -380,7 +383,7 @@ window.addEventListener('error', function (e) {
 
 <!-- Visualizar foto -->
 <div class="visor" id="visor" hidden>
-  <div class="topo"><b id="visorPlaca"></b><button type="button" id="btnFecharVisor">Fechar</button></div>
+  <div class="topo"><b id="visorPlaca"></b><span class="visor-botoes"><button type="button" id="btnBaixarFoto" disabled>Baixar</button><button type="button" id="btnFecharVisor">Fechar</button></span></div>
   <div class="area"><img id="visorImg" alt="Foto do inventário"></div>
   <div class="rodape" id="visorInfo"></div>
 </div>
@@ -528,6 +531,18 @@ function reduzir(img, lado) {
   c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
   return c;
 }
+// Corta o centro da foto no formato 3:4 (1440 x 1920, igual à foto de exemplo).
+function enquadrar(img) {
+  const w = img.width, h = img.height, deitada = w > h;
+  const prop = deitada ? 4 / 3 : 3 / 4;
+  let cw = w, ch = h;
+  if (w / h > prop) cw = Math.round(h * prop); else ch = Math.round(w / prop);
+  const c = document.createElement('canvas');
+  c.width = deitada ? 1920 : 1440; c.height = deitada ? 1440 : 1920;
+  if (cw < c.width) { c.width = cw; c.height = ch; }
+  c.getContext('2d').drawImage(img, (w - cw) / 2, (h - ch) / 2, cw, ch, 0, 0, c.width, c.height);
+  return c;
+}
 const b64 = (canvas, q) => canvas.toDataURL('image/jpeg', q).split(',')[1];
 
 function quebrarLinhas(ctx, texto, largura, max) {
@@ -665,7 +680,7 @@ async function novaFoto(file) {
   $('metaEnd').textContent = '';
 
   const [img, pos] = await Promise.all([carregarImagem(file), posicaoAtual()]);
-  const base = reduzir(img, 2048);
+  const base = enquadrar(img);
   const filial = (st.lojas || []).filter(l => l.nome === st.loja)[0];
   st.foto = {
     base, quando, pos, codigo: codigoFoto(), endereco: enderecoProximo(pos),
@@ -1047,12 +1062,40 @@ async function abrirFoto(it) {
   [it.data + ' às ' + it.hora + ' · ' + it.loja, 'Responsável: ' + it.responsavel, it.endereco, 'Código de Foto: ' + it.codigo + (it.manual ? ' · placa digitada à mão' : '')]
     .filter(Boolean).forEach(t => { const s = document.createElement('span'); s.textContent = t; $('visorInfo').appendChild(s); });
   $('visor').hidden = false;
+  st.visor = null; $('btnBaixarFoto').disabled = true;
   try {
     const r = await api('verFoto', it.codigo);
-    if (!$('visor').hidden) $('visorImg').src = 'data:image/jpeg;base64,' + r.imagem;
+    if (!$('visor').hidden) {
+      $('visorImg').src = 'data:image/jpeg;base64,' + r.imagem;
+      st.visor = { imagem: r.imagem, nome: nomeArquivo(it) }; $('btnBaixarFoto').disabled = false;
+    }
   } catch (e) { if (!sessaoExpirada(e)) toast('Não consegui abrir a foto em tamanho cheio.', 'warn'); }
 }
-$('btnFecharVisor').onclick = () => { $('visor').hidden = true; $('visorImg').src = ''; };
+$('btnFecharVisor').onclick = () => { $('visor').hidden = true; $('visorImg').src = ''; st.visor = null; };
+
+function nomeArquivo(it) {
+  const limpo = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const data = String(it.data || '').split('/').reverse().join('-');
+  return [limpo(it.placa), limpo(it.loja), data, limpo(it.codigo)].filter(Boolean).join('_') + '.jpg';
+}
+// Baixa a foto já com a marca d'água, do jeito que está salva no Drive.
+$('btnBaixarFoto').onclick = async () => {
+  if (!st.visor) return;
+  const bin = atob(st.visor.imagem); const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const blob = new Blob([bytes], { type: 'image/jpeg' });
+  const arquivo = new File([blob], st.visor.nome, { type: 'image/jpeg' });
+  // no iPhone o "baixar" não funciona no app instalado; lá usa o menu de compartilhar (Salvar imagem)
+  if (/iphone|ipad|ipod/i.test(navigator.userAgent) && navigator.canShare && navigator.canShare({ files: [arquivo] })) {
+    try { await navigator.share({ files: [arquivo] }); } catch (e) {}
+    return;
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = st.visor.nome;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  toast('Foto baixada.');
+};
 
 // ---------- administração ----------
 async function carregarUsuarios() {
