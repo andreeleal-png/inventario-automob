@@ -543,6 +543,17 @@ function enquadrar(img) {
   c.getContext('2d').drawImage(img, (w - cw) / 2, (h - ch) / 2, cw, ch, 0, 0, c.width, c.height);
   return c;
 }
+// Recorte ampliado da parte de baixo e do meio da foto, onde a placa costuma ficar.
+function recortePlaca(base) {
+  const w = base.width, h = base.height;
+  const x = w * 0.08, y = h * 0.42, cw = w * 0.84, ch = h * 0.5;
+  const k = Math.min(2, 1600 / cw);
+  const c = document.createElement('canvas');
+  c.width = Math.round(cw * k); c.height = Math.round(ch * k);
+  const ctx = c.getContext('2d'); ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(base, x, y, cw, ch, 0, 0, c.width, c.height);
+  return c;
+}
 const b64 = (canvas, q) => canvas.toDataURL('image/jpeg', q).split(',')[1];
 
 function quebrarLinhas(ctx, texto, largura, max) {
@@ -696,7 +707,7 @@ async function novaFoto(file) {
   const foto = st.foto;
   try {
     const r = await api('analisar', {
-      imagem: b64(reduzir(base, 1600), 0.85),
+      imagem: b64(reduzir(base, 1600), 0.85), recorte: b64(recortePlaca(base), 0.9),
       lat: pos && !foto.endereco ? pos.lat : null, lng: pos && !foto.endereco ? pos.lng : null,
     });
     if (st.foto !== foto) return;
@@ -710,7 +721,9 @@ async function novaFoto(file) {
       b.onclick = () => { $('placa').value = p; validarPlaca(); renderizar(); };
       $('chips').appendChild(b);
     });
-    validarPlaca(st.candidatos.length ? null : 'Não encontrei a placa na foto. Digite a placa acima.');
+    validarPlaca(st.candidatos.length ? null : r.erroOcr
+      ? 'A leitura da placa falhou (' + r.erroOcr.slice(0, 160) + '). Digite a placa acima.'
+      : 'Não encontrei a placa na foto. Digite a placa acima.');
   } catch (e) {
     if (st.foto !== foto) return;
     st.candidatos = [];

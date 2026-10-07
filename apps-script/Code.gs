@@ -221,8 +221,9 @@ function configurar() {
   fotos.getRange(1, 1, 1, CABECALHO.length)
     .setFontWeight('bold').setBackground('#103047').setFontColor('#ffffff');
 
-  if (!ss.getSheetByName(APP.abaResumo)) {
-    const r = ss.insertSheet(APP.abaResumo);
+  // Aba Resumo (fórmulas reescritas sempre, para corrigir versões antigas)
+  {
+    const r = ss.getSheetByName(APP.abaResumo) || ss.insertSheet(APP.abaResumo);
     r.getRange('A1').setValue('Fotos por loja').setFontWeight('bold');
     r.getRange('A2').setFormula(
       "=IFERROR(QUERY(Fotos!B:E,\"select E, count(D) where D is not null group by E order by count(D) desc label E 'Loja', count(D) 'Fotos'\",1),\"Sem fotos ainda\")");
@@ -288,6 +289,18 @@ function redefinirSenhaAdmin() {
     }
   }
   Logger.log('Usuário admin não encontrado. Rode configurar().');
+}
+
+/**
+ * Rode esta função pelo editor para testar a leitura de placa com a última foto da planilha.
+ * O texto lido aparece no Registro de execução.
+ */
+function testarLeitura() {
+  const fotos = planilha_().getSheetByName(APP.abaFotos);
+  if (fotos.getLastRow() < 2) { Logger.log('Ainda não há fotos na planilha.'); return; }
+  const id = fotos.getRange(fotos.getLastRow(), CABECALHO.indexOf('ID do arquivo') + 1, 1, 1).getValues()[0][0];
+  const b64 = Utilities.base64Encode(DriveApp.getFileById(id).getBlob().getBytes());
+  Logger.log('TEXTO LIDO >> ' + (ocr_(b64) || '(nada)'));
 }
 
 function doGet() {
@@ -391,7 +404,12 @@ function analisar(token, d) {
   sessao_(token);
   const out = { texto: '', endereco: '' };
   if (d && d.imagem) {
-    try { out.texto = ocr_(d.imagem); } catch (e) { out.erroOcr = String(e.message || e); }
+    const textos = [];
+    [d.recorte, d.imagem].filter(Boolean).forEach(img => {
+      try { textos.push(ocr_(img)); } catch (e) { out.erroOcr = String(e.message || e); }
+    });
+    out.texto = textos.join('\n');
+    if (out.texto.trim()) delete out.erroOcr;
   }
   if (d && d.lat != null && d.lng != null) out.endereco = endereco_(d.lat, d.lng);
   return out;
@@ -689,6 +707,39 @@ function miniatura_(miniId, arquivoId) {
 
 /** OCR do Google Drive: converte a imagem num Google Doc temporário e lê o texto. */
 function ocr_(b64) {
+  try {
+    return ocrRest_(b64);
+  } catch (e) {
+    if (typeof Drive === 'undefined') throw e;
+    return ocrServico_(b64); // serviço avançado "Drive API", se estiver ligado
+  }
+}
+
+// Leitura pelo Google Drive: envia a imagem convertendo para Google Docs (OCR) e lê o texto.
+function ocrRest_(b64) {
+  const cab = { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() };
+  const f = 'inventario' + Date.now();
+  const meta = JSON.stringify({ name: 'ocr-placa', mimeType: 'application/vnd.google-apps.document' });
+  const corpo = Utilities.newBlob('--' + f + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + meta +
+      '\r\n--' + f + '\r\nContent-Type: image/jpeg\r\n\r\n').getBytes()
+    .concat(Utilities.base64Decode(b64))
+    .concat(Utilities.newBlob('\r\n--' + f + '--').getBytes());
+  const r = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&ocrLanguage=pt&fields=id', {
+    method: 'post', contentType: 'multipart/related; boundary=' + f, payload: corpo, headers: cab, muteHttpExceptions: true,
+  });
+  if (r.getResponseCode() >= 300) throw new Error('Drive ' + r.getResponseCode() + ': ' + r.getContentText().slice(0, 300));
+  const id = JSON.parse(r.getContentText()).id;
+  try {
+    const t = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + id + '/export?mimeType=text/plain',
+      { headers: cab, muteHttpExceptions: true });
+    if (t.getResponseCode() >= 300) throw new Error('Drive ' + t.getResponseCode() + ': ' + t.getContentText().slice(0, 300));
+    return t.getContentText();
+  } finally {
+    UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + id, { method: 'delete', headers: cab, muteHttpExceptions: true });
+  }
+}
+
+function ocrServico_(b64) {
   const blob = Utilities.newBlob(Utilities.base64Decode(b64), 'image/jpeg', 'placa.jpg');
   let id;
   if (Drive.Files.insert) { // Drive API v2
