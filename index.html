@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Inventário Automob</title>
+<meta name="theme-color" content="#103047">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Inventário">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+  html, body { margin: 0; height: 100%; background: #103047; }
+  body { padding-top: env(safe-area-inset-top, 0px); box-sizing: border-box; font: 16px/1.4 system-ui, sans-serif; color: #fff; }
+  #app { display: block; width: 100%; height: 100%; border: 0; background: #103047; }
+  #espera { position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 16px; text-align: center; padding: 24px; }
+  #espera img { width: 96px; height: 96px; border-radius: 22px; }
+  #espera a { color: #f2b630; font-weight: 600; }
+  #espera[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div id="espera">
+  <img src="icon-192.png" alt="">
+  <div id="msg">Abrindo o inventário…</div>
+  <a id="direto" hidden href="#" rel="noopener">Abrir direto no navegador</a>
+</div>
+<iframe id="app" title="Inventário Automob" allow="geolocation; camera; clipboard-write" referrerpolicy="no-referrer-when-downgrade"></iframe>
+<script>
+  // Endereço do app publicado no Google Apps Script (o mesmo link /exec de sempre).
+  var APP = 'https://script.google.com/macros/s/AKfycby0untZeq4ouURFWcO3uhZrH1LkmxOVjHeiyPqRk-wMJVd1LpCuQK8kstkCxV8baKof3g/exec';
+  var frame = document.getElementById('app');
+  var espera = document.getElementById('espera');
+  document.getElementById('direto').href = APP;
+  frame.addEventListener('load', function () { espera.hidden = true; });
+  frame.src = APP;
+  setTimeout(function () {
+    if (!espera.hidden) {
+      document.getElementById('msg').textContent = 'Está demorando para abrir. Confira a internet.';
+      document.getElementById('direto').hidden = false;
+    }
+  }, 15000);
+  if (!navigator.onLine) document.getElementById('msg').textContent = 'Sem internet. Conecte-se para abrir o inventário.';
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
+</script>
+</body>
+</html>
