@@ -142,12 +142,18 @@ h2 { font: 700 20px/1.2 var(--display); letter-spacing: .02em; text-transform: u
 .entrada .marca span { font: 600 15px/1 var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--amber); }
 .entrada form, .cartao { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 14px; }
 .entrada h1 { font: 700 26px/1.1 var(--display); margin: 0; }
-.campo input[type=text]:not(.placa-input), .campo input[type=password], .campo input[type=date], .campo select, .campo textarea {
+.campo input[type=text]:not(.placa-input), .campo input[type=password], .campo input[type=search], .campo input[type=date], .campo select, .campo textarea {
   width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font-size: 17px; color: var(--fg);
 }
 .campo textarea { min-height: 160px; font-size: 15px; line-height: 1.5; resize: vertical; }
 .erro { color: var(--bad); font-size: 14px; font-weight: 600; min-height: 0; }
 .erro:empty { display: none; }
+.lojas-busca { margin-bottom: 8px; }
+.lojas-lista { max-height: 260px; overflow-y: auto; border: 1px solid var(--borda, rgba(255,255,255,.15)); border-radius: 12px; padding: 4px 10px; }
+.lojas-lista .grupo { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; opacity: .7; margin: 10px 0 4px; }
+.lojas-lista label { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-weight: 500; }
+.lojas-lista input { width: 20px; height: 20px; flex: none; }
+.lojas-contagem { font-size: 13px; opacity: .8; margin-top: 6px; }
 .linha-check { display: flex; align-items: center; gap: 10px; font-weight: 600; }
 .linha-check input { width: 22px; height: 22px; }
 
@@ -335,7 +341,7 @@ window.addEventListener('error', function (e) {
 </nav>
 </div>
 
-<!-- Escolha de loja (admin) -->
+<!-- Escolha de loja (admin ou usuário com várias lojas) -->
 <div class="sheet" id="sheetLoja" hidden>
   <form id="formLojaAdmin">
     <h3>Loja do inventário</h3>
@@ -365,8 +371,11 @@ window.addEventListener('error', function (e) {
       <input type="text" id="uUsuario" autocapitalize="none" spellcheck="false" required placeholder="Ex.: joao.aricanduva"></div>
     <div class="campo"><label for="uNome">Nome</label><input type="text" id="uNome" required></div>
     <div class="campo"><label for="uPerfil">Perfil</label>
-      <select id="uPerfil"><option value="Loja">Loja: fotografa e vê só a própria loja</option><option value="Admin">Admin: vê tudo, cadastra e baixa o Excel</option></select></div>
-    <div class="campo" id="uLojaCampo"><label for="uLoja">Loja</label><select id="uLoja"></select></div>
+      <select id="uPerfil"><option value="Loja">Loja: fotografa e vê só as lojas marcadas</option><option value="Admin">Admin: vê tudo, cadastra e baixa o Excel</option></select></div>
+    <div class="campo" id="uLojaCampo"><label for="uLojaBusca">Lojas (marque uma ou mais)</label>
+      <input type="search" id="uLojaBusca" class="lojas-busca" placeholder="Buscar loja ou código" autocomplete="off">
+      <div class="lojas-lista" id="uLojas"></div>
+      <div class="lojas-contagem" id="uLojasN">Nenhuma loja marcada</div></div>
     <div class="campo"><label for="uSenha" id="uSenhaRotulo">Senha provisória</label>
       <input type="text" id="uSenha" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Mínimo 6 caracteres"></div>
     <label class="linha-check"><input type="checkbox" id="uAtivo" checked> Acesso ativo</label>
@@ -640,17 +649,10 @@ function desenharMarca(base, d) {
   ctx.fillText(DIAS[d.quando.getDay()], xBarra + 26 * s, y - 8 * s);
   y -= 138 * s + 34 * s;
 
-  // caixa da placa
+  // placa no modelo Mercosul (mesma altura da caixa antiga)
   sombra(false);
-  const placaTxt = d.placa ? formatarPlaca(d.placa) : 'SEM PLACA';
-  ctx.font = F(700, 64);
-  const pw = Math.max(270 * s, ctx.measureText(placaTxt).width + 60 * s), ph = 124 * s;
-  retanguloArredondado(ctx, x0, y - ph, pw, ph, 16 * s);
-  ctx.fillStyle = 'rgba(236,239,242,0.88)'; ctx.fill();
-  ctx.lineWidth = 7 * s; ctx.strokeStyle = '#1a1a1a'; ctx.stroke();
-  ctx.fillStyle = '#151515'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(placaTxt, x0 + pw / 2, y - ph / 2 + 3 * s);
-  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  const ph = 124 * s, pw = Math.round(ph * 3.08), px = x0, py = y - ph;
+  desenharPlaca(ctx, px, py, pw, ph, d.placa ? limparPlaca(d.placa).replace(/[^A-Z0-9]/g, '') : '', s);
   y -= ph + 24 * s;
 
   // logo Automob
@@ -659,6 +661,57 @@ function desenharMarca(base, d) {
   ctx.drawImage(LOGO, x0, y - lh, lw, lh); ctx.restore();
 
   return c;
+}
+
+// Moldura de placa Mercosul: faixa azul com BRASIL, bandeira, "BR" e os caracteres pretos.
+function desenharPlaca(ctx, x, y, w, h, placa, s) {
+  const r = 12 * s, faixa = h * 0.26;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 10 * s; ctx.shadowOffsetY = 3 * s;
+  retanguloArredondado(ctx, x, y, w, h, r); ctx.fillStyle = '#ecedeb'; ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.save(); retanguloArredondado(ctx, x, y, w, h, r); ctx.clip();
+  const gb = ctx.createLinearGradient(0, y, 0, y + faixa);
+  gb.addColorStop(0, '#2a5fb0'); gb.addColorStop(1, '#1a4890');
+  ctx.fillStyle = gb; ctx.fillRect(x, y, w, faixa);
+  ctx.restore();
+  // BRASIL
+  ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = '700 ' + Math.round(faixa * 0.62) + 'px "Barlow Condensed", "Arial Narrow", sans-serif';
+  ctx.fillText('BRASIL', x + w / 2, y + faixa / 2 + 1 * s);
+  // MERCOSUL e estrelas
+  ctx.font = '600 ' + Math.round(faixa * 0.26) + 'px Barlow, Arial, sans-serif';
+  ctx.fillText('MERCOSUL', x + w * 0.13, y + faixa * 0.74);
+  [[-0.03, 0.22], [0, 0.34], [0.03, 0.2], [0.015, 0.46]].forEach(([dx, dy]) => {
+    ctx.beginPath(); ctx.arc(x + w * (0.13 + dx), y + faixa * dy, Math.max(1, 1.6 * s), 0, Math.PI * 2); ctx.fill();
+  });
+  // bandeira do Brasil
+  const bw = faixa * 1.05, bh = faixa * 0.72, bx = x + w - bw - 12 * s, by = y + (faixa - bh) / 2;
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(bx - 1.5 * s, by - 1.5 * s, bw + 3 * s, bh + 3 * s);
+  ctx.fillStyle = '#009b3a'; ctx.fillRect(bx, by, bw, bh);
+  ctx.fillStyle = '#fedf00'; ctx.beginPath();
+  ctx.moveTo(bx + bw * 0.08, by + bh / 2); ctx.lineTo(bx + bw / 2, by + bh * 0.1);
+  ctx.lineTo(bx + bw * 0.92, by + bh / 2); ctx.lineTo(bx + bw / 2, by + bh * 0.9); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#002776'; ctx.beginPath(); ctx.arc(bx + bw / 2, by + bh / 2, bh * 0.24, 0, Math.PI * 2); ctx.fill();
+  // BR
+  ctx.fillStyle = '#111111'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.font = '700 ' + Math.round(h * 0.17) + 'px "Barlow Condensed", "Arial Narrow", sans-serif';
+  ctx.fillText('BR', x + 9 * s, y + h - 9 * s);
+  // caracteres
+  const corpo = h - faixa, cy = y + faixa + corpo / 2 + 2 * s;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#111111';
+  let t = placa ? corpo * 0.86 : corpo * 0.5;
+  const txt = placa || 'SEM PLACA', maxW = w * 0.78;
+  ctx.font = '700 ' + Math.round(t) + 'px "Barlow Condensed", "Arial Narrow", sans-serif';
+  while (ctx.measureText(txt).width > maxW && t > 10) { t -= 2; ctx.font = '700 ' + Math.round(t) + 'px "Barlow Condensed", "Arial Narrow", sans-serif'; }
+  if ('letterSpacing' in ctx && placa) ctx.letterSpacing = Math.round(3 * s) + 'px';
+  ctx.fillText(txt, x + w / 2 + 6 * s, cy);
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+  // borda
+  retanguloArredondado(ctx, x + 2 * s, y + 2 * s, w - 4 * s, h - 4 * s, r - 2 * s);
+  ctx.lineWidth = 4 * s; ctx.strokeStyle = '#2b2b2b'; ctx.stroke();
+  ctx.restore();
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 }
 
 async function renderizar() {
@@ -931,11 +984,11 @@ async function entrar(usuario) {
   $('formBusca').reset(); st.buscou = false; st.lojas = [];
   $('lista').innerHTML = '<div class="vazio">As fotos que você tirar aparecem aqui, com a placa e se já foram enviadas para a planilha.</div>';
   $('navUsuarios').hidden = !admin;
-  $('btnLoja').classList.toggle('fixa', !admin);
+  $('btnLoja').classList.toggle('fixa', !podeTrocarLoja());
   $('quem').innerHTML = '';
   const b = document.createElement('b'); b.textContent = usuario.nome;
-  $('quem').append(b, document.createTextNode(usuario.usuario + ' · perfil ' + usuario.perfil + (admin ? '' : ' · ' + usuario.loja)));
-  definirLoja(admin ? ler('lojaAdmin', '') : usuario.loja);
+  $('quem').append(b, document.createTextNode(usuario.usuario + ' · perfil ' + usuario.perfil + (admin ? '' : ' · ' + lojasDoUsuario().join(', '))));
+  definirLoja(lojaInicial());
   irPara('abaFotografar');
   listar().then(enviarPendentes);
   try {
@@ -951,14 +1004,32 @@ async function entrar(usuario) {
       }
       if (!st.lojas.length) { toast('Nenhuma filial ativa. Cadastre as filiais na aba Lojas da planilha.', 'warn'); }
     } else {
-      definirLoja(i.usuario.loja);
+      $('btnLoja').classList.toggle('fixa', !podeTrocarLoja());
+      const minhas = lojasDoUsuario();
+      if (minhas.indexOf(st.loja) < 0) definirLoja(minhas.length === 1 ? minhas[0] : '');
+      if (!st.loja && minhas.length > 1) $('btnLoja').click();
     }
   } catch (e) {}
 }
 
+function lojasDoUsuario() {
+  const u = st.usuario || {};
+  return u.lojas && u.lojas.length ? u.lojas : (u.loja ? [u.loja] : []);
+}
+function podeTrocarLoja() {
+  return !!st.usuario && (st.usuario.perfil === 'Admin' || lojasDoUsuario().length > 1);
+}
+// última loja usada por este usuário neste celular
+function lojaInicial() {
+  const u = st.usuario;
+  const salva = ler('loja:' + u.usuario, u.perfil === 'Admin' ? ler('lojaAdmin', '') : '');
+  if (u.perfil === 'Admin') return salva;
+  const minhas = lojasDoUsuario();
+  return minhas.indexOf(salva) >= 0 ? salva : (minhas.length === 1 ? minhas[0] : '');
+}
 function definirLoja(loja) {
   st.loja = loja || '';
-  if (st.usuario && st.usuario.perfil === 'Admin') gravar('lojaAdmin', st.loja);
+  if (st.usuario) gravar('loja:' + st.usuario.usuario, st.loja);
   $('lojaNome').textContent = st.loja || 'Escolher loja';
   $('nHoje').textContent = '0'; $('nTotal').textContent = '–';
   atualizarContagem();
@@ -982,8 +1053,9 @@ function preencherLojas() {
   };
   opcoes($('fLoja'), 'Todas as lojas');
   opcoes($('selLoja'));
-  opcoes($('uLoja'));
-  $('filtroLojaCampo').hidden = st.usuario.perfil !== 'Admin';
+  if (st.usuario.perfil === 'Admin') montarListaLojas(grupos, nomes);
+  $('filtroLojaCampo').hidden = !podeTrocarLoja();
+  $('fLoja').options[0].textContent = st.usuario.perfil === 'Admin' ? 'Todas as lojas' : 'Todas as minhas lojas';
   $('nLojas').textContent = st.lojas.length === 1 ? '1 filial' : st.lojas.length + ' filiais';
 }
 
@@ -1016,7 +1088,7 @@ $('btnSair').onclick = async () => {
 $('btnTrocarSenha').onclick = () => { $('sheetMenu').hidden = true; abrirTrocaSenha(false); };
 
 $('btnLoja').onclick = () => {
-  if (!st.usuario || st.usuario.perfil !== 'Admin') return;
+  if (!podeTrocarLoja()) return;
   if (!st.lojas.length) { irPara('abaUsuarios'); return toast('Nenhuma filial ativa na aba Lojas da planilha.', 'warn'); }
   $('selLoja').value = st.loja || st.lojas[0].nome;
   $('sheetLoja').hidden = false;
@@ -1039,7 +1111,7 @@ async function buscarFotos(pagina) {
   try {
     const r = await api('listarFotos', filtro);
     $('resumoBusca').textContent = r.total === 0 ? 'Nenhuma foto encontrada com esses filtros.'
-      : (r.total === 1 ? '1 foto' : r.total + ' fotos') + (filtro.loja ? ' em ' + filtro.loja : (st.usuario.perfil === 'Admin' ? ' em todas as lojas' : ' em ' + st.usuario.loja));
+      : (r.total === 1 ? '1 foto' : r.total + ' fotos') + (filtro.loja ? ' em ' + filtro.loja : (st.usuario.perfil === 'Admin' ? ' em todas as lojas' : lojasDoUsuario().length > 1 ? ' nas suas lojas' : ' em ' + lojasDoUsuario()[0]));
     r.itens.forEach(it => {
       const b = document.createElement('button'); b.type = 'button'; b.className = 'foto-card';
       const img = document.createElement('img'); img.className = 'mini'; img.alt = ''; img.loading = 'lazy';
@@ -1047,7 +1119,7 @@ async function buscarFotos(pagina) {
       const info = document.createElement('div'); info.className = 'info';
       const p = document.createElement('div'); p.className = 'p'; p.textContent = it.placa === 'SEM PLACA' ? 'Sem placa' : formatarPlaca(it.placa);
       const h1 = document.createElement('div'); h1.className = 'h'; h1.textContent = it.data + ' ' + it.hora.slice(0, 5);
-      const h2 = document.createElement('div'); h2.className = 'h'; h2.textContent = st.usuario.perfil === 'Admin' ? it.loja : it.responsavel;
+      const h2 = document.createElement('div'); h2.className = 'h'; h2.textContent = podeTrocarLoja() ? it.loja : it.responsavel;
       info.append(p, h1, h2);
       b.append(img, info);
       b.onclick = () => abrirFoto(it);
@@ -1115,7 +1187,8 @@ function mostrarUsuarios(lista) {
   lista.sort((a, b) => (a.perfil + a.loja + a.nome).localeCompare(b.perfil + b.loja + b.nome, 'pt-BR')).forEach(u => {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'usuario';
     const n = document.createElement('b'); n.textContent = u.nome;
-    const h = document.createElement('span'); h.className = 'h'; h.textContent = u.usuario + ' · ' + (u.perfil === 'Admin' ? 'Admin' : u.loja);
+    const h = document.createElement('span'); h.className = 'h'; const ls = u.lojas && u.lojas.length ? u.lojas : [u.loja];
+    h.textContent = u.usuario + ' · ' + (u.perfil === 'Admin' ? 'Admin' : ls[0] + (ls.length > 1 ? ' e mais ' + (ls.length - 1) : ''));
     const p = document.createElement('span');
     p.className = 'pill ' + (u.ativo ? 'ok' : 'bad'); p.textContent = u.ativo ? (u.trocar ? 'Senha provisória' : 'Ativo') : 'Bloqueado';
     b.append(n, p, h);
@@ -1130,7 +1203,8 @@ function abrirUsuario(u) {
   $('uUsuario').value = novo ? '' : u.usuario; $('uUsuario').disabled = !novo;
   $('uNome').value = novo ? '' : u.nome;
   $('uPerfil').value = novo ? 'Loja' : u.perfil;
-  if (!novo) $('uLoja').value = u.loja;
+  marcarLojas(novo ? [] : (u.lojas && u.lojas.length ? u.lojas : [u.loja]));
+  $('uLojaBusca').value = ''; filtrarLojas();
   $('uAtivo').checked = novo ? true : u.ativo;
   $('uSenha').value = ''; $('uSenha').required = novo;
   $('uSenhaRotulo').textContent = novo ? 'Senha provisória' : 'Nova senha provisória (deixe em branco para manter)';
@@ -1142,13 +1216,43 @@ $('btnNovoUsuario').onclick = () => {
   if (!st.lojas.length) return toast('Nenhuma filial ativa na aba Lojas da planilha.', 'warn');
   abrirUsuario(null);
 };
+// lista de lojas com caixas de marcar, agrupadas por bandeira
+function montarListaLojas(grupos, nomes) {
+  const caixa = $('uLojas'); caixa.innerHTML = '';
+  nomes.forEach(g => {
+    const t = document.createElement('div'); t.className = 'grupo'; t.textContent = g; caixa.appendChild(t);
+    grupos[g].slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')).forEach(l => {
+      const lb = document.createElement('label'); const c = document.createElement('input');
+      c.type = 'checkbox'; c.value = l.nome; c.onchange = contarLojas;
+      lb.dataset.busca = (l.nome + ' ' + (l.codigo || '') + ' ' + g).toLowerCase();
+      lb.append(c, document.createTextNode(l.nome + (l.codigo ? ' · ' + l.codigo : '')));
+      caixa.appendChild(lb);
+    });
+  });
+}
+function lojasMarcadas() { return [...$('uLojas').querySelectorAll('input:checked')].map(c => c.value); }
+function marcarLojas(lista) { $('uLojas').querySelectorAll('input').forEach(c => { c.checked = lista.indexOf(c.value) >= 0; }); contarLojas(); }
+function contarLojas() {
+  const n = lojasMarcadas().length;
+  $('uLojasN').textContent = n === 0 ? 'Nenhuma loja marcada' : n === 1 ? '1 loja marcada' : n + ' lojas marcadas';
+}
+function filtrarLojas() {
+  const q = $('uLojaBusca').value.trim().toLowerCase();
+  let grupo = null, visiveis = 0;
+  [...$('uLojas').children].forEach(el => {
+    if (el.className === 'grupo') { if (grupo) grupo.hidden = !visiveis; grupo = el; visiveis = 0; return; }
+    el.hidden = !!q && el.dataset.busca.indexOf(q) < 0; if (!el.hidden) visiveis++;
+  });
+  if (grupo) grupo.hidden = !visiveis;
+}
+$('uLojaBusca').addEventListener('input', filtrarLojas);
 $('uPerfil').onchange = () => { $('uLojaCampo').hidden = $('uPerfil').value === 'Admin'; };
 $('formUsuario').addEventListener('submit', async e => {
   e.preventDefault();
   $('usuarioErro').textContent = '';
   const u = {
     novo: !st.editando, usuario: st.editando || $('uUsuario').value, nome: $('uNome').value,
-    perfil: $('uPerfil').value, loja: $('uLoja').value, ativo: $('uAtivo').checked, senha: $('uSenha').value,
+    perfil: $('uPerfil').value, lojas: lojasMarcadas(), ativo: $('uAtivo').checked, senha: $('uSenha').value,
   };
   try {
     mostrarUsuarios(await api('salvarUsuario', u));
@@ -1160,7 +1264,7 @@ $('formUsuario').addEventListener('submit', async e => {
 // ---------- eventos da câmera ----------
 $('btnFoto').onclick = () => {
   if (!st.loja) {
-    if (st.usuario && st.usuario.perfil === 'Admin') return $('btnLoja').click();
+    if (podeTrocarLoja()) return $('btnLoja').click();
     return toast('Seu usuário está sem loja. Peça ao administrador para ajustar.', 'warn');
   }
   $('arquivo').value = ''; $('arquivo').click();

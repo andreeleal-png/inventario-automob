@@ -6,7 +6,7 @@
  * e converte as coordenadas do GPS em endereço.
  *
  * Acesso por usuário e senha, com dois perfis:
- *   Loja  — fotografa e consulta só as fotos da própria loja.
+ *   Loja  — fotografa e consulta só as fotos das lojas do seu cadastro (uma ou mais).
  *   Admin — vê todas as lojas, cadastra usuários e baixa o Excel.
  * As filiais ficam na aba Lojas da planilha.
  *
@@ -379,7 +379,8 @@ function trocarSenha(token, atual, nova) {
 /** Dados iniciais do app depois do login. */
 function inicio(token) {
   const u = sessao_(token);
-  const out = { usuario: publico_(u), lojas: listaLojas_() };
+  const todas = listaLojas_();
+  const out = { usuario: publico_(u), lojas: u.perfil === 'Admin' ? todas : todas.filter(l => u.lojas.indexOf(l.nome) >= 0) };
   if (u.perfil === 'Admin') {
     const c = cfg_();
     const id = c.ss.getId();
@@ -424,8 +425,9 @@ function salvar(token, d) {
   const u = sessao_(token);
   const c = cfg_();
   const placa = String(d.placa || '').toUpperCase().trim() || 'SEM PLACA';
-  const loja = u.perfil === 'Admin' ? String(d.loja || '').trim() : u.loja;
-  if (!loja) throw new Error('Seu usuário está sem loja definida. Peça ao administrador para ajustar o cadastro.');
+  if (u.perfil !== 'Admin' && !u.lojas.length) throw new Error('Seu usuário está sem loja definida. Peça ao administrador para ajustar o cadastro.');
+  const loja = lojaPermitida_(u, d.loja);
+  if (!loja) throw new Error('Escolha a loja antes de fotografar.');
   const filial = listaLojas_(true).filter(l => l.nome === loja)[0];
 
   // Mesma foto enviada duas vezes (ex.: conexão caiu depois de gravar): não duplica.
@@ -478,7 +480,7 @@ function salvar(token, d) {
 /** Quantas fotos a loja tem no dia (dd/MM/yyyy) e no total. */
 function contagem(token, loja, data) {
   const u = sessao_(token);
-  if (u.perfil !== 'Admin') loja = u.loja;
+  loja = lojaPermitida_(u, loja);
   const sh = planilha_().getSheetByName(APP.abaFotos);
   const ultima = sh.getLastRow();
   let dia = 0, total = 0;
@@ -497,7 +499,8 @@ function contagem(token, loja, data) {
 function listarFotos(token, f) {
   const u = sessao_(token);
   f = f || {};
-  const loja = u.perfil === 'Admin' ? String(f.loja || '') : u.loja;
+  const loja = lojaPermitida_(u, f.loja);
+  const minhas = u.perfil === 'Admin' ? null : u.lojas; // sem loja escolhida, a loja vê todas as suas
   const placa = String(f.placa || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   const sh = planilha_().getSheetByName(APP.abaFotos);
   const ultima = sh.getLastRow();
@@ -508,6 +511,7 @@ function listarFotos(token, f) {
   for (let i = vals.length - 1; i >= 0; i--) {
     const r = vals[i];
     if (loja && r[COL['Loja']] !== loja) continue;
+    if (!loja && minhas && minhas.indexOf(r[COL['Loja']]) < 0) continue;
     if (f.data && r[COL['Data']] !== f.data) continue;
     if (placa && r[COL['Placa']].replace(/[^A-Z0-9]/g, '').indexOf(placa) < 0) continue;
     achadas.push(r);
@@ -532,7 +536,7 @@ function verFoto(token, codigo) {
   const u = sessao_(token);
   const r = linhaPorCodigo_(planilha_(), codigo);
   if (!r) throw new Error('Foto não encontrada.');
-  if (u.perfil !== 'Admin' && r.loja !== u.loja) throw new Error('Você não tem acesso a esta foto.');
+  if (u.perfil !== 'Admin' && u.lojas.indexOf(r.loja) < 0) throw new Error('Você não tem acesso a esta foto.');
   const blob = DriveApp.getFileById(r.arquivoId).getBlob();
   return { imagem: Utilities.base64Encode(blob.getBytes()), nome: blob.getName() };
 }
@@ -546,12 +550,12 @@ function listarUsuarios(token) {
   const sh = planilha_().getSheetByName(APP.abaUsuarios);
   const linhas = sh.getDataRange().getValues().slice(1);
   return linhas.filter(r => r[0]).map(r => ({
-    usuario: String(r[0]), nome: String(r[1]), perfil: String(r[2]), loja: String(r[3]),
+    usuario: String(r[0]), nome: String(r[1]), perfil: String(r[2]), loja: String(r[3]), lojas: separarLojas_(r[3]),
     ativo: r[4] === 'Sim', trocar: r[5] === 'Sim',
   }));
 }
 
-/** Cria ou altera um usuário. u = { usuario, nome, perfil, loja, ativo, senha?, novo } */
+/** Cria ou altera um usuário. u = { usuario, nome, perfil, lojas: [nomes] (ou loja), ativo, senha?, novo } */
 function salvarUsuario(token, u) {
   const eu = admin_(token);
   const usuario = String(u.usuario || '').trim().toLowerCase();
@@ -559,8 +563,12 @@ function salvarUsuario(token, u) {
   const nome = String(u.nome || '').trim();
   if (!nome) throw new Error('Informe o nome da pessoa.');
   const perfil = u.perfil === 'Admin' ? 'Admin' : 'Loja';
-  const loja = String(u.loja || '').trim();
-  if (perfil === 'Loja' && !listaLojas_().some(l => l.nome === loja)) throw new Error('Escolha a loja deste usuário.');
+  const validas = listaLojas_().map(l => l.nome);
+  const lojas = (Array.isArray(u.lojas) ? u.lojas.map(x => String(x).trim()) : separarLojas_(u.loja))
+    .filter((l, i, a) => l && a.indexOf(l) === i);
+  if (perfil === 'Loja' && !lojas.length) throw new Error('Escolha pelo menos uma loja para este usuário.');
+  const invalida = lojas.filter(l => validas.indexOf(l) < 0)[0];
+  if (perfil === 'Loja' && invalida) throw new Error('Loja desconhecida: ' + invalida + '.');
   if (usuario === eu.usuario && (perfil !== 'Admin' || !u.ativo)) throw new Error('Você não pode tirar o seu próprio acesso de administrador.');
 
   const sh = planilha_().getSheetByName(APP.abaUsuarios);
@@ -573,7 +581,7 @@ function salvarUsuario(token, u) {
     validarSenha_(u.senha);
     sal = Utilities.getUuid(); hash = hash_(u.senha, sal); trocar = 'Sim';
   }
-  const linha = [usuario, nome, perfil, perfil === 'Admin' ? '' : loja, u.ativo ? 'Sim' : 'Não', trocar, hash, sal];
+  const linha = [usuario, nome, perfil, perfil === 'Admin' ? '' : lojas.join(SEP_LOJAS), u.ativo ? 'Sim' : 'Não', trocar, hash, sal];
   if (existente) sh.getRange(existente.linha, 1, 1, linha.length).setValues([linha]);
   else sh.appendRow(linha.concat([new Date()]));
   return listarUsuarios(token);
@@ -629,7 +637,7 @@ function buscarUsuario_(usuario) {
     if (String(r[0]).trim().toLowerCase() === usuario) {
       return {
         linha: i + 1, usuario: usuario, nome: String(r[1]), perfil: r[2] === 'Admin' ? 'Admin' : 'Loja',
-        loja: String(r[3]).trim(), ativo: String(r[4]), trocar: String(r[5]), hash: String(r[6]), sal: String(r[7]),
+        loja: separarLojas_(r[3])[0] || '', lojas: separarLojas_(r[3]), ativo: String(r[4]), trocar: String(r[5]), hash: String(r[6]), sal: String(r[7]),
       };
     }
   }
@@ -637,7 +645,21 @@ function buscarUsuario_(usuario) {
 }
 
 function publico_(u) {
-  return { usuario: u.usuario, nome: u.nome, perfil: u.perfil, loja: u.loja, trocarSenha: u.trocar === 'Sim' };
+  return { usuario: u.usuario, nome: u.nome, perfil: u.perfil, loja: u.loja, lojas: u.lojas || [], trocarSenha: u.trocar === 'Sim' };
+}
+
+// Várias lojas por usuário ficam na mesma célula, separadas por ";".
+const SEP_LOJAS = '; ';
+function separarLojas_(v) {
+  return String(v || '').split(';').map(x => x.trim()).filter(Boolean);
+}
+
+/** Loja que o usuário pode usar: admin usa a pedida; loja só uma das suas (ou a única que tem). */
+function lojaPermitida_(u, pedida) {
+  pedida = String(pedida || '').trim();
+  if (u.perfil === 'Admin') return pedida;
+  if (u.lojas.indexOf(pedida) >= 0) return pedida;
+  return u.lojas.length === 1 ? u.lojas[0] : '';
 }
 
 /** Valida o token e devolve o usuário atual. Erro "SESSAO" faz o app pedir login de novo. */
