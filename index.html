@@ -193,7 +193,8 @@ body.com-nav .acoes { bottom: 0; }
 .visor .topo { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .visor .topo b { font: 700 24px/1 var(--display); letter-spacing: .05em; }
 .visor .topo button { background: rgba(255,255,255,.12); border: 0; color: #fff; border-radius: 10px; padding: 8px 14px; font-weight: 700; }
-.visor .visor-botoes { display: flex; gap: 8px; }
+.visor .visor-botoes { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.visor .topo #btnReenviar { background: var(--amber, #f2b630); color: #1c1400; }
 .visor .topo #btnBaixarFoto { background: var(--amber, #f2b630); color: #1c1400; }
 .visor .topo button:disabled { opacity: .5; }
 .visor .topo #btnApagarFoto { background: rgba(220,60,60,.22); color: #ffb4b4; }
@@ -430,7 +431,7 @@ window.addEventListener('error', function (e) {
 
 <!-- Visualizar foto -->
 <div class="visor" id="visor" hidden>
-  <div class="topo"><b id="visorPlaca"></b><span class="visor-botoes"><button type="button" id="btnApagarFoto" hidden>Apagar</button><button type="button" id="btnBaixarFoto" disabled>Baixar</button><button type="button" id="btnFecharVisor">Fechar</button></span></div>
+  <div class="topo"><b id="visorPlaca"></b><span class="visor-botoes"><button type="button" id="btnReenviar" hidden>Reenviar</button><button type="button" id="btnDescartar" hidden>Descartar</button><button type="button" id="btnApagarFoto" hidden>Apagar</button><button type="button" id="btnBaixarFoto" disabled>Baixar</button><button type="button" id="btnFecharVisor">Fechar</button></span></div>
   <div class="area"><img id="visorImg" alt="Foto do inventário"></div>
   <div class="rodape" id="visorInfo"></div>
 </div>
@@ -898,6 +899,8 @@ const memoria = new Map();
 const minhas = async () => (await bd.todos()).filter(r => !r.usuario || (st.usuario && r.usuario === st.usuario.usuario));
 
 let enviando = false;
+// falhas que passam sozinhas: a foto continua na fila
+const erroPassageiro = e => /sem servidor|tempo esgotado|NetworkError|network|failed to fetch|lock|ocupad|too many|muitas|timed? ?out|tente de novo|try again|internal|interno|servi[cç]o|service/i.test(msg(e));
 async function enviarPendentes() {
   if (enviando || !st.token) return;
   enviando = true;
@@ -914,10 +917,11 @@ async function enviarPendentes() {
         if (res.duplicada) toast('Atenção: a placa ' + formatarPlaca(r.resumo.placa) + ' já tinha sido registrada hoje nesta loja.', 'warn');
         else toast((r.resumo.placa ? formatarPlaca(r.resumo.placa) : 'Foto') + ' está na planilha.');
       } catch (e) {
-        if (!sessaoExpirada(e) && !/sem servidor|tempo esgotado|NetworkError|network/i.test(msg(e))) {
-          toast('Não consegui enviar uma foto: ' + msg(e), 'warn');
-        }
-        break; // sem conexão ou sessão: tenta de novo mais tarde
+        if (sessaoExpirada(e) || erroPassageiro(e)) break; // sem conexão, sessão ou servidor ocupado: tenta de novo mais tarde
+        // erro que não se resolve sozinho: marca a foto e segue com as outras
+        r.status = 'erro'; r.erro = msg(e);
+        await bd.salvar(r);
+        toast('Não consegui enviar uma foto: ' + msg(e) + ' Toque nela em "Últimas fotos" para reenviar ou descartar.', 'warn');
       }
     }
   } finally {
@@ -931,11 +935,17 @@ async function listar() {
   const todos = (await minhas()).sort((a, b) => b.criado - a.criado);
   todos.filter(r => r.status === 'enviada').slice(60).forEach(r => bd.apagar(r.id));
   const pend = todos.filter(r => r.status === 'pendente').length;
+  const outros = (await bd.todos()).filter(r => r.status === 'pendente' && r.usuario && st.usuario && r.usuario !== st.usuario.usuario).length;
   $('pendentes').hidden = pend === 0;
   $('pendTxt').textContent = pend === 1 ? '1 foto aguardando envio' : pend + ' fotos aguardando envio';
   const lista = $('lista');
-  if (!todos.length) return;
   lista.innerHTML = '';
+  if (outros) {
+    const av = document.createElement('div'); av.className = 'vazio';
+    av.textContent = (outros === 1 ? '1 foto de outro usuário espera' : outros + ' fotos de outro usuário esperam') + ' envio neste celular. Elas vão quando essa pessoa entrar de novo.';
+    lista.appendChild(av);
+  }
+  if (!todos.length) { if (!outros) { const v = document.createElement('div'); v.className = 'vazio'; v.textContent = 'As fotos que você tirar aparecem aqui, com a placa e se já foram enviadas para a planilha.'; lista.appendChild(v); } return; }
   todos.slice(0, 20).forEach(r => {
     const info = r.dados || r.resumo || {};
     const el = document.createElement('div'); el.className = 'item';
@@ -946,6 +956,7 @@ async function listar() {
     meio.append(p, h);
     const pill = document.createElement('span');
     if (r.status === 'pendente') { pill.className = 'pill warn'; pill.textContent = 'Aguardando envio'; }
+    else if (r.status === 'erro') { pill.className = 'pill bad'; pill.textContent = 'Erro no envio'; }
     else if (r.duplicada) { pill.className = 'pill bad'; pill.textContent = 'Placa repetida'; }
     else { pill.className = 'pill ok'; pill.textContent = 'Na planilha'; }
     el.append(img, meio, pill);
@@ -954,6 +965,7 @@ async function listar() {
       codigo: r.id, placa: info.placa || 'SEM PLACA', data: info.data || '', hora: info.hora || '', loja: info.loja || '',
       responsavel: st.usuario ? st.usuario.nome : '', endereco: r.dados ? r.dados.endereco : '',
       miniatura: String(r.thumb || '').split(',')[1] || '', local: r.dados ? r.dados.foto : null,
+      erro: r.status === 'erro' ? (r.erro || 'erro no envio') : '',
     });
     el.onkeydown = e => { if (e.key === 'Enter') el.click(); };
     lista.appendChild(el);
@@ -1156,13 +1168,16 @@ function dataDoFiltro() {
   const v = $('fData').value; // yyyy-mm-dd
   return v ? v.split('-').reverse().join('/') : '';
 }
+let buscaN = 0;
 async function buscarFotos(pagina) {
   st.buscou = true;
+  const n = ++buscaN;
   const filtro = { loja: $('fLoja').value, data: dataDoFiltro(), placa: $('fPlaca').value, pagina };
   if (pagina === 0) { $('grade').innerHTML = ''; $('resumoBusca').innerHTML = '<span class="carregando"></span> Buscando fotos…'; }
   $('btnMais').hidden = true;
   try {
     const r = await api('listarFotos', filtro);
+    if (n !== buscaN) return; // outra busca começou depois desta
     $('resumoBusca').textContent = r.total === 0 ? 'Nenhuma foto encontrada com esses filtros.'
       : (r.total === 1 ? '1 foto' : r.total + ' fotos') + (filtro.loja ? ' em ' + filtro.loja : (st.usuario.perfil === 'Admin' ? ' em todas as lojas' : lojasDoUsuario().length > 1 ? ' nas suas lojas' : ' em ' + lojasDoUsuario()[0]));
     r.itens.forEach(it => {
@@ -1182,7 +1197,7 @@ async function buscarFotos(pagina) {
     st.pagina = r.pagina;
     $('btnMais').hidden = r.pagina + 1 >= r.paginas;
   } catch (e) {
-    if (!sessaoExpirada(e)) $('resumoBusca').textContent = 'Não consegui buscar as fotos. Confira a internet e tente de novo.';
+    if (n === buscaN && !sessaoExpirada(e)) $('resumoBusca').textContent = 'Não consegui buscar as fotos. Confira a internet e tente de novo.';
   }
 }
 $('formBusca').addEventListener('submit', e => { e.preventDefault(); buscarFotos(0); });
@@ -1192,11 +1207,13 @@ async function abrirFoto(it) {
   $('visorPlaca').textContent = it.placa === 'SEM PLACA' ? 'Sem placa' : formatarPlaca(it.placa);
   $('visorImg').src = it.miniatura ? 'data:image/jpeg;base64,' + it.miniatura : '';
   $('visorInfo').innerHTML = '';
-  [it.data + ' às ' + it.hora + ' · ' + it.loja, 'Responsável: ' + it.responsavel, it.endereco, 'Código de Foto: ' + it.codigo + (it.manual ? ' · placa digitada à mão' : '')]
+  [it.erro ? 'Não foi enviada: ' + it.erro : '', it.data + ' às ' + it.hora + ' · ' + it.loja, 'Responsável: ' + it.responsavel, it.endereco, 'Código de Foto: ' + it.codigo + (it.manual ? ' · placa digitada à mão' : '')]
     .filter(Boolean).forEach(t => { const s = document.createElement('span'); s.textContent = t; $('visorInfo').appendChild(s); });
   $('visor').hidden = false;
   st.visor = null; st.visorItem = it; $('btnBaixarFoto').disabled = true;
   $('btnApagarFoto').hidden = !(st.usuario && st.usuario.perfil === 'Admin') || !!it.local;
+  $('btnReenviar').hidden = $('btnDescartar').hidden = !it.erro;
+  $('btnBaixarFoto').hidden = !!it.erro;
   if (it.local) { // ainda não foi para a planilha: mostra a foto guardada no celular
     $('visorImg').src = 'data:image/jpeg;base64,' + it.local;
     st.visor = { imagem: it.local, nome: nomeArquivo(it) }; $('btnBaixarFoto').disabled = false;
@@ -1204,12 +1221,32 @@ async function abrirFoto(it) {
   }
   try {
     const r = await api('verFoto', it.codigo);
-    if (!$('visor').hidden) {
+    if (st.visorItem === it && !$('visor').hidden) { // ignora a resposta se outra foto já foi aberta
       $('visorImg').src = 'data:image/jpeg;base64,' + r.imagem;
       st.visor = { imagem: r.imagem, nome: nomeArquivo(it) }; $('btnBaixarFoto').disabled = false;
     }
-  } catch (e) { if (!sessaoExpirada(e)) toast('Não consegui abrir a foto em tamanho cheio.', 'warn'); }
+  } catch (e) { if (st.visorItem === it && !sessaoExpirada(e)) toast('Não consegui abrir a foto em tamanho cheio.', 'warn'); }
 }
+
+// foto que deu erro no envio: tentar de novo ou descartar
+async function fotoComErro() {
+  const it = st.visorItem; if (!it) return null;
+  return (await bd.todos()).find(r => r.id === it.codigo && r.status === 'erro') || null;
+}
+$('btnReenviar').onclick = async () => {
+  const r = await fotoComErro(); if (!r) return;
+  r.status = 'pendente'; delete r.erro; await bd.salvar(r);
+  $('btnFecharVisor').click();
+  await listar(); enviarPendentes();
+};
+$('btnDescartar').onclick = async () => {
+  const r = await fotoComErro(); if (!r) return;
+  if (!confirm('Descartar esta foto?\n\nEla ainda não está na planilha e será apagada deste celular.')) return;
+  await bd.apagar(r.id);
+  $('btnFecharVisor').click();
+  toast('Foto descartada.');
+  listar();
+};
 $('btnFecharVisor').onclick = () => { $('visor').hidden = true; $('visorImg').src = ''; st.visor = null; st.visorItem = null; };
 
 // Admin: apaga a foto de vez (Drive e planilha)

@@ -28,7 +28,7 @@ const APP = {
 const CABECALHO = [
   'Data/Hora', 'Data', 'Hora', 'Placa', 'Loja', 'Responsável', 'Endereço',
   'Latitude', 'Longitude', 'Precisão GPS (m)', 'Código da foto', 'Foto (link)',
-  'Texto lido na foto', 'Placa digitada à mão', 'ID do arquivo', 'ID da miniatura', 'Usuário', 'Código da loja',
+  'Texto lido na foto', 'Placa digitada à mão', 'ID do arquivo', 'ID da miniatura', 'Usuário', 'Código da loja', 'Recebido em',
 ];
 const COL = {}; CABECALHO.forEach((c, i) => { COL[c] = i; });
 
@@ -218,6 +218,7 @@ function configurar() {
   } else {
     fotos.getRange(1, 1, 1, CABECALHO.length).setValues([CABECALHO]);
   }
+  fotos.getRange(1, CABECALHO.indexOf('Recebido em') + 1, fotos.getMaxRows(), 1).setNumberFormat('dd/MM/yyyy HH:mm:ss');
   fotos.getRange(1, 1, 1, CABECALHO.length)
     .setFontWeight('bold').setBackground('#103047').setFontColor('#ffffff');
 
@@ -405,10 +406,13 @@ function analisar(token, d) {
   sessao_(token);
   const out = { texto: '', endereco: '' };
   if (d && d.imagem) {
+    // Primeiro o recorte da placa; a foto inteira só se o recorte não trouxer placa (economiza a cota diária).
     const textos = [];
-    [d.recorte, d.imagem].filter(Boolean).forEach(img => {
+    const temPlaca = t => /[A-Z]{3}[\s.-]*[0-9][\s.-]*[A-Z0-9][\s.-]*[0-9][\s.-]*[0-9]/.test(String(t).toUpperCase());
+    for (const img of [d.recorte, d.imagem].filter(Boolean)) {
       try { textos.push(ocr_(img)); } catch (e) { out.erroOcr = String(e.message || e); }
-    });
+      if (temPlaca(textos.join('\n'))) break;
+    }
     out.texto = textos.join('\n');
     if (out.texto.trim()) delete out.erroOcr;
   }
@@ -426,7 +430,11 @@ function salvar(token, d) {
   const c = cfg_();
   const placa = String(d.placa || '').toUpperCase().trim() || 'SEM PLACA';
   if (u.perfil !== 'Admin' && !u.lojas.length) throw new Error('Seu usuário está sem loja definida. Peça ao administrador para ajustar o cadastro.');
-  const loja = lojaPermitida_(u, d.loja);
+  const pedida = String(d.loja || '').trim();
+  if (pedida && u.perfil !== 'Admin' && u.lojas.indexOf(pedida) < 0) {
+    throw new Error('A loja ' + pedida + ' não está mais no seu cadastro. Descarte esta foto e tire de novo.');
+  }
+  const loja = lojaPermitida_(u, pedida);
   if (!loja) throw new Error('Escolha a loja antes de fotografar.');
   const filial = listaLojas_(true).filter(l => l.nome === loja)[0];
 
@@ -463,12 +471,16 @@ function salvar(token, d) {
         }
       }
     }
+    if (sh.getLastColumn() < CABECALHO.length) sh.getRange(1, 1, 1, CABECALHO.length).setValues([CABECALHO]);
+    // ' na frente: a planilha grava como texto (sem virar fórmula nem perder zeros à esquerda)
+    const txt = v => (v === '' || v == null) ? '' : "'" + v;
     sh.appendRow([
-      new Date(d.iso), "'" + d.data, "'" + d.hora, placa, loja, u.nome, endereco,
+      new Date(d.iso), txt(d.data), txt(d.hora), txt(placa), txt(loja), txt(u.nome), txt(endereco),
       d.lat == null ? '' : d.lat, d.lng == null ? '' : d.lng,
       d.precisao == null ? '' : Math.round(d.precisao),
-      d.codigo, arquivo.getUrl(), (d.texto || '').replace(/\s+/g, ' ').slice(0, 300),
-      d.manual ? 'Sim' : 'Não', arquivo.getId(), miniId, u.usuario, filial ? filial.codigo : '',
+      d.codigo, arquivo.getUrl(), txt((d.texto || '').replace(/\s+/g, ' ').slice(0, 300)),
+      d.manual ? 'Sim' : 'Não', arquivo.getId(), miniId, txt(u.usuario), txt(filial ? filial.codigo : ''),
+      new Date(),
     ]);
   } finally {
     lock.releaseLock();
